@@ -1,0 +1,13 @@
+#map {
+    flex: 1;
+}
+
+.nav{
+    width: 350px;
+    height: 98vh;
+    background-color: #fff;
+}
+
+.container{
+    display: flex;
+}
