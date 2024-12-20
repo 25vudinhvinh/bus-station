@@ -36,6 +36,22 @@ app.get('/api/bus_stops', async (req, res) => {
     }
 });
 
+app.get('/api/bus_paths' , async (req, res)=>{
+    try{
+        const results = await pool.query(
+            `SELECT id, route_id, ST_AsGeoJSON(geom) AS geom FROM bus_paths`
+        )
+        const data = results.rows.map(row => ({
+            id: row.id,
+            route_id: row.route_id,
+            geom: row.geom ? JSON.parse(row.geom).coordinates : null
+        }))
+        res.json(data)
+    }catch(err){ 
+        console.error(err)
+        res.status(500).json({error: 'Internal Server Error'});
+    }   
+})
 
 
 app.listen(PORT, () => {
