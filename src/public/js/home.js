@@ -1,61 +1,85 @@
-let circles = []
-let polylines = []
-const map = L.map('map').setView([21.028333, 105.853333], 12); 
+let circles = [];
+let polylines = [];
+const map = L.map('map').setView([21.028333, 105.853333], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap'
 }).addTo(map);
 
-const selectStops = document.querySelector('#select-stops')
+const selectStops = document.querySelector('#select-stops');
+const routeList = document.querySelector('.route-list');
+console.log(routeList);
 
 fetch('/api/bus_stops')
-.then(response => response.json())
-.then(data => { 
-    const uniqueRoute = new Set(data.map(stop => stop.route_id))
-    uniqueRoute.forEach(route => {
-        const selectStop = document.createElement('option')
-        selectStop.value = route
-        selectStop.innerHTML = route
-        selectStops.appendChild(selectStop)
-    })
+    .then(response => response.json())
+    .then(stopsData => {
+        const uniqueRoutes = new Set(stopsData.map(stop => stop.route_id));
+        uniqueRoutes.forEach(route => {
+            const option = document.createElement('option');
+            option.value = route;
+            option.innerHTML = route;
+            selectStops.appendChild(option);
+        });
 
-    selectStops.addEventListener('change', (event) => {
-        const selectValue = event.target.value
+        selectStops.addEventListener('change', (event) => {
+            const selectedRoute = event.target.value;
 
-        circles.forEach(item => map.removeLayer(item.circle))
-        polylines.forEach(item => map.removeLayer(item.polyline))
+            // Remove existing layers
+            circles.forEach(item => map.removeLayer(item.circle));
+            polylines.forEach(item => map.removeLayer(item.polyline));
+            routeList.innerHTML = '';
+            circles = [];
+            polylines = [];
 
+            // Fetch and display route path
+            fetch('/api/bus_paths')
+                .then(response => response.json())
+                .then(pathsData => {
+                    pathsData.forEach(path => {
+                        if (path.route_id === selectedRoute) {
+                            const coordinates = path.geom[0].map(point => [point[1], point[0]]);
+                            const polyline = L.polyline(coordinates, {
+                                color: 'red',
+                                weight: getDynamicWeight(map.getZoom()) // Initial line weight
+                            }).addTo(map);
 
-        circles = []
-        polylines = []
+                            polylines.push({ route_id: path.route_id, polyline });
 
+                            // Place points (stops) on the route
+                            stopsData.forEach(stop => {
+                                if (stop.route_id === selectedRoute) {
+                                    const listStop = stop.stop_name;
+                                    routeList.innerHTML += `<li>${listStop}</li>`;
+                                    const [longitude, latitude] = stop.geom;
+                                    const circle = L.circleMarker([latitude, longitude], {
+                                        color: 'red',
+                                        fillColor: 'white',
+                                        fillOpacity: 1,
+                                        radius: getDynamicRadius(map.getZoom()) 
+                                    }).addTo(map);
 
-      fetch('/api/bus_paths')
-        .then(response => response.json())
-        .then(data => {
-            data.forEach(path => {
-                if (path.route_id === selectValue) {
-                    const coordinates = path.geom[0].map(point => [point[1], point[0]]) 
-                        const polyline = L.polyline(coordinates, { color: 'red' }).addTo(map)
-                        polylines.push({ route_id: path.route_id, polyline: polyline })
-                }
-            })
-        })
+                                    circles.push({ route_id: stop.route_id, circle });
+                                }
+                            });
+                        }
+                    });
+                });
+        });
+    });
 
+// Dynamic sizing based on zoom level
+function getDynamicRadius(zoom) {
+    return Math.max(4, zoom - 8); // Adjust size: min 4, increases with zoom
+}
 
+function getDynamicWeight(zoom) {
+    return Math.max(2, (zoom - 8) * 0.5); // Adjust line thickness: min 2
+}
 
-           data.forEach(stop => {
-            if (selectValue == stop.route_id) {
-                const [longitude, latitude] = stop.geom
-                const circle = L.circle([latitude, longitude], {
-                    color: 'white',
-                    fillColor: 'white',
-                    fillOpacity: 1,
-                    radius: 30,
-                }).addTo(map)
-                circles.push({ route_id: stop.route_id, circle: circle })
-            }
-        })
-    })
-})
+// Adjust point and line sizes on zoom
+map.on('zoomend', () => {
+    const zoom = map.getZoom();
+    circles.forEach(item => item.circle.setRadius(getDynamicRadius(zoom)));
+    polylines.forEach(item => item.polyline.setStyle({ weight: getDynamicWeight(zoom) }));
+});
