@@ -7,6 +7,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap'
 }).addTo(map);
 
+let nearbyStops = [];
+let userLocationMarker = null;
 const selectStops = document.querySelector('#select-stops');
 const routeList = document.querySelector('.route-list');
 console.log(routeList);
@@ -59,6 +61,7 @@ fetch('/api/bus_stops')
                                         radius: getDynamicRadius(map.getZoom()) 
                                     }).addTo(map);
 
+                                    circle.bindPopup(`Tuyến: ${stop.route_id}<br>Điểm dừng: ${stop.stop_name}`);
                                     circles.push({ route_id: stop.route_id, circle });
                                 }
                             });
@@ -83,3 +86,93 @@ map.on('zoomend', () => {
     circles.forEach(item => item.circle.setRadius(getDynamicRadius(zoom)));
     polylines.forEach(item => item.polyline.setStyle({ weight: getDynamicWeight(zoom) }));
 });
+
+function showStopNear() {
+    map.locate({ setView: true, maxZoom: 14 });
+
+    map.on('locationfound', (e) => {
+        const userLatLng = e.latlng;
+
+        if (userLocationMarker) {
+            map.removeLayer(userLocationMarker);
+        }
+
+        userLocationMarker = L.circleMarker(userLatLng, {
+            color: 'white',
+            fillColor: 'green',
+            fillOpacity: 0.5,
+            radius: 8
+        }).addTo(map)
+        .bindPopup("Vị trí của bạn")
+        .openPopup();
+
+        fetch('/api/bus_stops')
+            .then(response => response.json())
+            .then(stopsData => {
+                const radius = 3000;
+                let stopsInRadius = [];
+
+                stopsData.forEach(stop => {
+                    const [stopLon, stopLat] = stop.geom;
+                    const stopLatLng = L.latLng(stopLat, stopLon);
+                    const distance = userLatLng.distanceTo(stopLatLng);
+
+                    if (distance <= radius) {
+                        stopsInRadius.push({ ...stop, distance });
+                    }
+                });
+
+                stopsInRadius.forEach(stop => {
+                    const [stopLon, stopLat] = stop.geom;
+                    const stopLatLng = L.latLng(stopLat, stopLon);
+
+                    const marker = L.circleMarker(stopLatLng,{
+                        color: 'white',
+                        fillColor: 'red',
+                        fillOpacity: 1,
+                        radius: 8
+                    }).addTo(map)
+                    .bindPopup(
+                        `Điểm dừng: ${stop.stop_name}<br>
+                        Tuyến: ${stop.route_id}<br>
+                        Khoảng cách: ${(Math.round(stop.distance)/1000).toFixed(2)} km`
+                    )
+
+                  
+                    // Lưu marker vào mảng nearbyStops
+                    nearbyStops.push(marker);
+                });
+                if (stopsInRadius.length === 0) {
+                    alert("Không có điểm dừng nào trong bán kính 3km.");
+                }
+            })
+    });
+}
+
+function deleteSelect() {
+    const selectStops = document.querySelector('#select-stops');
+    if (selectStops) {
+        selectStops.selectedIndex = 0;
+    }
+
+    circles.forEach(item => map.removeLayer(item.circle));
+    circles = [];
+
+    polylines.forEach(item => map.removeLayer(item.polyline));
+    polylines = [];
+
+    const routeList = document.querySelector('.route-list');
+    if (routeList) {
+        routeList.innerHTML = '';
+    }
+
+    if (userLocationMarker) {
+        map.removeLayer(userLocationMarker);
+        userLocationMarker = null;
+    }
+
+    // Xóa các điểm dừng ở gần
+    nearbyStops.forEach(marker => map.removeLayer(marker));
+    nearbyStops = []; // Làm trống mảng nearbyStops
+    map.setView([21.028333, 105.853333], 12);
+}
